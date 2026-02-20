@@ -14,20 +14,20 @@ struct WorkspaceView: View {
 
     private var tabStrip: some View {
         HStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(workspace.tabs) { tab in
-                        TabButton(
-                            tab: tab,
-                            isSelected: tab.id == workspace.selectedTabID,
-                            onSelect: { workspace.select(tabID: tab.id) },
-                            onClose: { workspace.close(tabID: tab.id) }
-                        )
-                    }
+            HStack(spacing: 6) {
+                ForEach(workspace.tabs) { tab in
+                    TabButton(
+                        tab: tab,
+                        isSelected: tab.id == workspace.selectedTabID,
+                        onSelect: { workspace.select(tabID: tab.id) },
+                        onClose: { workspace.close(tabID: tab.id) }
+                    )
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Button {
                 workspace.openEmptyTab()
@@ -39,6 +39,7 @@ struct WorkspaceView: View {
             .keyboardShortcut("t")
             .help("New Tab")
         }
+        .clipped()
         .frame(height: 44)
         .background(.ultraThinMaterial)
     }
@@ -84,7 +85,7 @@ private struct TabButton: View {
                         .truncationMode(.middle)
                     Spacer(minLength: 0)
                 }
-                .frame(width: 210, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

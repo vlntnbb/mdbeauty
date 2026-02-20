@@ -106,6 +106,7 @@ enum MarkdownRenderer {
 
         let baseHref = escapeHTML(baseFolderURL?.absoluteString ?? "")
         let tocHTML = buildTOCHTML(enhanced.tocEntries)
+        let layoutClass = enhanced.tocEntries.isEmpty ? "layout no-toc" : "layout has-toc"
         let initialFragmentJS = escapeForJavaScript(initialFragment ?? "")
 
         return """
@@ -166,6 +167,9 @@ enum MarkdownRenderer {
               grid-template-columns: minmax(220px, 290px) minmax(0, 1fr);
               gap: 22px;
               align-items: start;
+            }
+            .layout.no-toc {
+              grid-template-columns: minmax(0, 1fr);
             }
             .toc-panel {
               position: sticky;
@@ -322,7 +326,7 @@ enum MarkdownRenderer {
           </style>
         </head>
         <body>
-          <div class="layout">
+          <div class="\(layoutClass)">
             \(tocHTML)
             <main class="wrap markdown-body">
               \(enhanced.bodyHTML)

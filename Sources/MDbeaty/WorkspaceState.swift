@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class WorkspaceState: ObservableObject {
+    private static let maxRecentFiles = 10
+
     struct Tab: Identifiable {
         let id: UUID
         let state: ViewerState
@@ -26,6 +28,7 @@ final class WorkspaceState: ObservableObject {
     }()
 
     init() {
+        UserDefaults.standard.set(Self.maxRecentFiles, forKey: "NSRecentDocumentsLimit")
         let tab = Tab(id: UUID(), state: ViewerState())
         tabs = [tab]
         selectedTabID = tab.id
@@ -42,29 +45,17 @@ final class WorkspaceState: ObservableObject {
     }
 
     var recentMarkdownURLs: [URL] {
-        NSDocumentController.shared.recentDocumentURLs.filter { url in
+        Array(NSDocumentController.shared.recentDocumentURLs.filter { url in
             isMarkdownLikeFileURL(url) && FileManager.default.fileExists(atPath: url.path)
-        }
+        }.prefix(Self.maxRecentFiles))
     }
 
     func openAtLaunch(url: URL) {
-        if let empty = singleEmptyTab() {
-            selectedTabID = empty.id
-            empty.state.open(url: url)
-            return
-        }
-
-        openInNewTab(url: url)
+        openInTabOrFocusExisting(url: url)
     }
 
     func openFromExternal(url: URL) {
-        if let empty = singleEmptyTab() {
-            selectedTabID = empty.id
-            empty.state.open(url: url)
-            return
-        }
-
-        openInNewTab(url: url)
+        openInTabOrFocusExisting(url: url)
     }
 
     func openWithSystemPanel() {
@@ -79,12 +70,12 @@ final class WorkspaceState: ObservableObject {
         guard panel.runModal() == .OK, let url = panel.url else {
             return
         }
-        openInSelectedTab(url: url)
+        openInTabOrFocusExisting(url: url)
     }
 
     func openRecent(url: URL) {
         guard FileManager.default.fileExists(atPath: url.path) else { return }
-        openInSelectedTab(url: url)
+        openInTabOrFocusExisting(url: url)
     }
 
     func clearRecentFiles() {
@@ -107,14 +98,6 @@ final class WorkspaceState: ObservableObject {
         tabs.append(tab)
         selectedTabID = tab.id
         tab.state.open(url: url)
-    }
-
-    func openInSelectedTab(url: URL) {
-        guard let selectedTab else {
-            openInNewTab(url: url)
-            return
-        }
-        selectedTab.state.open(url: url)
     }
 
     func select(tabID: UUID) {
@@ -156,5 +139,41 @@ final class WorkspaceState: ObservableObject {
     private func isMarkdownLikeFileURL(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         return ext == "md" || ext == "markdown" || ext == "mdown"
+    }
+
+    private func openInTabOrFocusExisting(url: URL) {
+        if let existing = tab(containing: url) {
+            selectedTabID = existing.id
+            existing.state.open(url: url)
+            return
+        }
+
+        if let empty = singleEmptyTab() {
+            selectedTabID = empty.id
+            empty.state.open(url: url)
+            return
+        }
+
+        openInNewTab(url: url)
+    }
+
+    private func tab(containing url: URL) -> Tab? {
+        let targetPath = normalizedPath(for: url)
+        return tabs.first { tab in
+            guard let fileURL = tab.state.fileURL else { return false }
+            return normalizedPath(for: fileURL) == targetPath
+        }
+    }
+
+    private func normalizedPath(for url: URL) -> String {
+        removingFragment(from: url).standardizedFileURL.path
+    }
+
+    private func removingFragment(from url: URL) -> URL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url
+        }
+        components.fragment = nil
+        return components.url ?? url
     }
 }

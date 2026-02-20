@@ -60,7 +60,7 @@ if let highlight = CGGradient(
     ctx.drawRadialGradient(
         highlight,
         startCenter: CGPoint(x: 298, y: 814),
-        startRadius: 30,
+        startRadius: 0,
         endCenter: CGPoint(x: 298, y: 814),
         endRadius: 560,
         options: []
@@ -83,14 +83,20 @@ text.addAttributes(
     range: NSRange(location: 0, length: text.length)
 )
 
-let shadow = NSShadow()
-shadow.shadowColor = NSColor(calibratedWhite: 0, alpha: 0.45)
-shadow.shadowBlurRadius = 20
-shadow.shadowOffset = NSSize(width: 0, height: -8)
-shadow.set()
-
 let size = text.size()
-text.draw(at: CGPoint(x: baseRect.midX - size.width / 2, y: baseRect.midY - size.height / 2 + 16))
+let textPoint = CGPoint(x: baseRect.midX - size.width / 2, y: baseRect.midY - size.height / 2 + 16)
+
+let textShadow = NSMutableAttributedString(string: ".md")
+textShadow.addAttributes(
+    [
+        .font: NSFont.systemFont(ofSize: 390, weight: .black),
+        .foregroundColor: NSColor(calibratedWhite: 0, alpha: 0.34),
+        .kern: -6
+    ],
+    range: NSRange(location: 0, length: textShadow.length)
+)
+textShadow.draw(at: CGPoint(x: textPoint.x + 2, y: textPoint.y - 8))
+text.draw(at: textPoint)
 
 image.unlockFocus()
 

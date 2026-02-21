@@ -69,3 +69,20 @@ After registration, assign it as default for `.md`:
 1. Select any `.md` file in Finder.
 2. `Get Info` -> `Open with` -> `MDbeaty`.
 3. Click `Change All...`.
+
+## VS Code Source Control Menu (Open with MDBeauty)
+
+Install a local VS Code extension that adds `Open with MDBeauty` for `.md` files in:
+
+- Source Control context menu
+- Explorer context menu
+
+Run:
+
+```bash
+./scripts/install-vscode-mdbeauty-menu.sh
+```
+
+Then reload VS Code (`Developer: Reload Window`).
+
+If VS Code cannot find the app by name, set `mdbeauty.appPath` in settings to the full `.app` path.

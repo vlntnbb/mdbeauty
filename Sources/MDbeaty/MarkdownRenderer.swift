@@ -98,9 +98,10 @@ enum MarkdownRenderer {
     """
 
     static func render(markdown: String, baseFolderURL: URL?, initialFragment: String?) -> String {
+        let contentMarkdown = stripYAMLFrontMatterIfPresent(markdown)
         let parser = MarkdownParser()
-        let headingCandidates = extractHeadingCandidates(from: markdown)
-        let normalizedMarkdown = normalizeForInk(markdown)
+        let headingCandidates = extractHeadingCandidates(from: contentMarkdown)
+        let normalizedMarkdown = normalizeForInk(contentMarkdown)
         let parsedBodyHTML = parser.html(from: normalizedMarkdown)
         let enhanced = enhanceBodyHTML(parsedBodyHTML, headingCandidates: headingCandidates)
 
@@ -244,6 +245,8 @@ enum MarkdownRenderer {
               color: var(--muted);
               line-height: 1.67;
               font-size: 1.04rem;
+              overflow-wrap: anywhere;
+              word-break: break-word;
             }
             a {
               color: var(--accent);
@@ -274,6 +277,12 @@ enum MarkdownRenderer {
               background: var(--code-bg);
               color: var(--code-fg);
               font-size: 0.92em;
+              max-width: 100%;
+            }
+            p code, li code, td code, th code, blockquote code {
+              white-space: break-spaces;
+              overflow-wrap: anywhere;
+              word-break: break-word;
             }
             pre {
               overflow-x: auto;
@@ -286,6 +295,9 @@ enum MarkdownRenderer {
               padding: 0;
               background: transparent;
               border-radius: 0;
+              white-space: pre;
+              overflow-wrap: normal;
+              word-break: normal;
             }
             blockquote {
               margin: 1rem 0;
@@ -295,6 +307,7 @@ enum MarkdownRenderer {
             }
             table {
               width: 100%;
+              max-width: 100%;
               border-collapse: collapse;
               margin: 14px 0;
             }
@@ -302,6 +315,13 @@ enum MarkdownRenderer {
               border: 1px solid var(--border);
               padding: 0.45rem 0.6rem;
               text-align: left;
+              vertical-align: top;
+              overflow-wrap: anywhere;
+              word-break: break-word;
+            }
+            th code, td code {
+              overflow-wrap: anywhere;
+              word-break: break-word;
             }
             hr {
               border: none;
@@ -589,6 +609,49 @@ enum MarkdownRenderer {
         }
 
         return candidates
+    }
+
+    private static func stripYAMLFrontMatterIfPresent(_ markdown: String) -> String {
+        var input = markdown
+        if input.hasPrefix("\u{FEFF}") {
+            input.removeFirst()
+        }
+
+        let normalized = input.replacingOccurrences(of: "\r\n", with: "\n")
+        guard normalized.hasPrefix("---\n") else {
+            return input
+        }
+
+        let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard lines.count >= 3 else { return input }
+        guard lines.first == "---" else { return input }
+
+        var closingIndex: Int?
+        for index in 1..<lines.count {
+            if lines[index] == "---" || lines[index] == "..." {
+                closingIndex = index
+                break
+            }
+        }
+
+        guard let endIndex = closingIndex, endIndex > 1 else {
+            return input
+        }
+
+        let metadataLines = lines[1..<endIndex]
+        let hasYAMLShape = metadataLines.contains { line in
+            line.range(of: #"^\s*[\w-]+\s*:"#, options: .regularExpression) != nil
+        }
+        guard hasYAMLShape else {
+            return input
+        }
+
+        let remaining = lines.dropFirst(endIndex + 1)
+        var result = remaining.joined(separator: "\n")
+        while result.hasPrefix("\n") {
+            result.removeFirst()
+        }
+        return result
     }
 
     private static func normalizeForInk(_ markdown: String) -> String {

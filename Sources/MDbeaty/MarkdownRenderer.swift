@@ -189,8 +189,9 @@ enum MarkdownRenderer {
               font-family: "Avenir Next", "Charter", "Iowan Old Style", serif;
             }
             .layout {
-              width: min(1400px, 94vw);
-              margin: 28px auto 40px;
+              width: calc(100% - 44px);
+              margin: 28px 22px 40px;
+              box-sizing: border-box;
               display: grid;
               grid-template-columns: minmax(220px, 290px) minmax(0, 1fr);
               gap: 22px;
@@ -406,7 +407,8 @@ enum MarkdownRenderer {
               .layout {
                 grid-template-columns: 1fr;
                 gap: 14px;
-                width: min(1300px, 96vw);
+                width: calc(100% - 24px);
+                margin: 20px 12px 30px;
               }
               .toc-panel {
                 position: static;

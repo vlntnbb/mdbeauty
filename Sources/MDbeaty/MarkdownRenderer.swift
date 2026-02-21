@@ -19,6 +19,11 @@ enum MarkdownRenderer {
         let title: String
     }
 
+    private struct FrontMatterExtraction {
+        let frontMatter: String?
+        let bodyMarkdown: String
+    }
+
     static let welcomeHTML = """
     <!doctype html>
     <html lang="en">
@@ -98,7 +103,8 @@ enum MarkdownRenderer {
     """
 
     static func render(markdown: String, baseFolderURL: URL?, initialFragment: String?) -> String {
-        let contentMarkdown = stripYAMLFrontMatterIfPresent(markdown)
+        let extracted = extractYAMLFrontMatterIfPresent(markdown)
+        let contentMarkdown = extracted.bodyMarkdown
         let parser = MarkdownParser()
         let headingCandidates = extractHeadingCandidates(from: contentMarkdown)
         let normalizedMarkdown = normalizeForInk(contentMarkdown)
@@ -109,6 +115,7 @@ enum MarkdownRenderer {
         let tocHTML = buildTOCHTML(enhanced.tocEntries)
         let layoutClass = enhanced.tocEntries.isEmpty ? "layout no-toc" : "layout has-toc"
         let initialFragmentJS = escapeForJavaScript(initialFragment ?? "")
+        let frontMatterHTML = buildFrontMatterHTML(extracted.frontMatter)
 
         return """
         <!doctype html>
@@ -133,6 +140,16 @@ enum MarkdownRenderer {
               --toc-bg: rgba(255, 255, 255, 0.74);
               --toc-active-bg: rgba(20, 108, 200, 0.12);
               --toc-active-fg: #0f5fba;
+              --fm-bg: rgba(15, 111, 214, 0.05);
+              --fm-border: rgba(15, 111, 214, 0.35);
+              --fm-summary-bg: rgba(15, 111, 214, 0.08);
+              --yaml-key: #0b67c0;
+              --yaml-string: #9d5f1f;
+              --yaml-number: #1f70a8;
+              --yaml-bool: #7b3fb4;
+              --yaml-null: #cc5500;
+              --yaml-punct: #607086;
+              --yaml-comment: #7d8795;
             }
             @media (prefers-color-scheme: dark) {
               :root {
@@ -149,6 +166,16 @@ enum MarkdownRenderer {
                 --toc-bg: rgba(18, 25, 34, 0.78);
                 --toc-active-bg: rgba(102, 179, 255, 0.2);
                 --toc-active-fg: #90c9ff;
+                --fm-bg: rgba(102, 179, 255, 0.1);
+                --fm-border: rgba(102, 179, 255, 0.38);
+                --fm-summary-bg: rgba(102, 179, 255, 0.13);
+                --yaml-key: #79c0ff;
+                --yaml-string: #f2a97f;
+                --yaml-number: #a5d6ff;
+                --yaml-bool: #d2a8ff;
+                --yaml-null: #ffb86b;
+                --yaml-punct: #93a3b6;
+                --yaml-comment: #7d8590;
               }
             }
             html, body {
@@ -230,6 +257,53 @@ enum MarkdownRenderer {
               padding: 30px 34px;
               min-height: calc(100vh - 86px);
             }
+            .frontmatter-details {
+              margin: 0 0 1.15rem;
+              border: 1px solid var(--fm-border);
+              border-left: 4px solid var(--fm-border);
+              border-radius: 12px;
+              background: var(--fm-bg);
+              overflow: hidden;
+            }
+            .frontmatter-summary {
+              cursor: pointer;
+              padding: 0.62rem 0.78rem;
+              font-family: "Avenir Next Demi Bold", "Gill Sans", sans-serif;
+              letter-spacing: 0.01em;
+              font-size: 0.95rem;
+              color: var(--fg);
+              background: var(--fm-summary-bg);
+              user-select: none;
+            }
+            .frontmatter-summary::marker {
+              color: var(--muted);
+            }
+            .frontmatter-summary:hover {
+              filter: brightness(0.98);
+            }
+            .frontmatter-details[open] .frontmatter-summary {
+              border-bottom: 1px solid var(--border);
+            }
+            .frontmatter-pre {
+              margin: 0;
+              padding: 0.72rem 0.84rem 0.86rem;
+              background: transparent;
+              overflow: auto;
+            }
+            .frontmatter-code {
+              display: block;
+              white-space: pre;
+              line-height: 1.48;
+              font-size: 0.915rem;
+              color: var(--fg);
+            }
+            .yaml-key { color: var(--yaml-key); }
+            .yaml-string { color: var(--yaml-string); }
+            .yaml-number { color: var(--yaml-number); }
+            .yaml-bool { color: var(--yaml-bool); }
+            .yaml-null { color: var(--yaml-null); }
+            .yaml-punct { color: var(--yaml-punct); }
+            .yaml-comment { color: var(--yaml-comment); }
             h1, h2, h3, h4, h5, h6 {
               margin: 1.1em 0 0.52em;
               line-height: 1.2;
@@ -349,6 +423,7 @@ enum MarkdownRenderer {
           <div class="\(layoutClass)">
             \(tocHTML)
             <main class="wrap markdown-body">
+              \(frontMatterHTML)
               \(enhanced.bodyHTML)
             </main>
           </div>
@@ -611,7 +686,7 @@ enum MarkdownRenderer {
         return candidates
     }
 
-    private static func stripYAMLFrontMatterIfPresent(_ markdown: String) -> String {
+    private static func extractYAMLFrontMatterIfPresent(_ markdown: String) -> FrontMatterExtraction {
         var input = markdown
         if input.hasPrefix("\u{FEFF}") {
             input.removeFirst()
@@ -619,12 +694,16 @@ enum MarkdownRenderer {
 
         let normalized = input.replacingOccurrences(of: "\r\n", with: "\n")
         guard normalized.hasPrefix("---\n") else {
-            return input
+            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: input)
         }
 
         let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        guard lines.count >= 3 else { return input }
-        guard lines.first == "---" else { return input }
+        guard lines.count >= 3 else {
+            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: input)
+        }
+        guard lines.first == "---" else {
+            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: input)
+        }
 
         var closingIndex: Int?
         for index in 1..<lines.count {
@@ -635,7 +714,7 @@ enum MarkdownRenderer {
         }
 
         guard let endIndex = closingIndex, endIndex > 1 else {
-            return input
+            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: input)
         }
 
         let metadataLines = lines[1..<endIndex]
@@ -643,15 +722,223 @@ enum MarkdownRenderer {
             line.range(of: #"^\s*[\w-]+\s*:"#, options: .regularExpression) != nil
         }
         guard hasYAMLShape else {
-            return input
+            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: input)
         }
 
+        let frontMatter = Array(lines[0...endIndex]).joined(separator: "\n")
         let remaining = lines.dropFirst(endIndex + 1)
-        var result = remaining.joined(separator: "\n")
-        while result.hasPrefix("\n") {
-            result.removeFirst()
+        var body = remaining.joined(separator: "\n")
+        while body.hasPrefix("\n") {
+            body.removeFirst()
         }
-        return result
+        return FrontMatterExtraction(frontMatter: frontMatter, bodyMarkdown: body)
+    }
+
+    private static func buildFrontMatterHTML(_ frontMatter: String?) -> String {
+        guard let frontMatter, !frontMatter.isEmpty else { return "" }
+        let highlighted = highlightYAMLFrontMatter(frontMatter)
+        return """
+        <details class="frontmatter-details">
+          <summary class="frontmatter-summary">YAML front matter</summary>
+          <pre class="frontmatter-pre"><code class="frontmatter-code">\(highlighted)</code></pre>
+        </details>
+        """
+    }
+
+    private static func highlightYAMLFrontMatter(_ frontMatter: String) -> String {
+        let lines = frontMatter.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        return lines.map(highlightYAMLLine).joined(separator: "\n")
+    }
+
+    private static func highlightYAMLLine(_ line: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return "" }
+        if trimmed == "---" || trimmed == "..." {
+            return "<span class=\"yaml-punct\">\(escapeHTML(line))</span>"
+        }
+        if trimmed.hasPrefix("#") {
+            return "<span class=\"yaml-comment\">\(escapeHTML(line))</span>"
+        }
+
+        let leading = leadingWhitespace(in: line)
+        let content = String(line.dropFirst(leading.count))
+        let contentRange = NSRange(content.startIndex..<content.endIndex, in: content)
+
+        if let keyRegex = try? NSRegularExpression(pattern: #"^(-\s+)?([A-Za-z0-9_.-]+)(\s*:\s*)(.*)$"#),
+           let match = keyRegex.firstMatch(in: content, options: [], range: contentRange) {
+            func group(_ index: Int) -> String {
+                guard let range = Range(match.range(at: index), in: content) else { return "" }
+                return String(content[range])
+            }
+
+            let dashPart = group(1)
+            let key = group(2)
+            let separator = group(3)
+            let value = group(4)
+
+            var rendered = escapeHTML(leading)
+
+            if !dashPart.isEmpty {
+                let dashSuffix = String(dashPart.dropFirst())
+                rendered += "<span class=\"yaml-punct\">-</span>\(escapeHTML(dashSuffix))"
+            }
+
+            if let colonIndex = separator.firstIndex(of: ":") {
+                let before = String(separator[..<colonIndex])
+                let after = String(separator[separator.index(after: colonIndex)...])
+                rendered += "<span class=\"yaml-key\">\(escapeHTML(key))</span>"
+                rendered += escapeHTML(before)
+                rendered += "<span class=\"yaml-punct\">:</span>"
+                rendered += escapeHTML(after)
+            } else {
+                rendered += "<span class=\"yaml-key\">\(escapeHTML(key))</span><span class=\"yaml-punct\">:</span>"
+            }
+
+            rendered += highlightYAMLScalarWithComment(value)
+            return rendered
+        }
+
+        if content.hasPrefix("- ") || content == "-" {
+            let suffix = content.count > 1 ? String(content.dropFirst()) : ""
+            return escapeHTML(leading) + "<span class=\"yaml-punct\">-</span>" + highlightYAMLScalarWithComment(suffix)
+        }
+
+        return escapeHTML(leading) + highlightYAMLScalarWithComment(content)
+    }
+
+    private static func highlightYAMLScalarWithComment(_ value: String) -> String {
+        let leading = leadingWhitespace(in: value)
+        let core = String(value.dropFirst(leading.count))
+        guard !core.isEmpty else { return escapeHTML(value) }
+
+        let (valuePart, commentPart) = splitTrailingComment(from: core)
+        let valueLeading = leadingWhitespace(in: valuePart)
+        let valueTrailing = trailingWhitespace(in: valuePart)
+        let token = valuePart
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var rendered = escapeHTML(leading)
+        rendered += escapeHTML(valueLeading)
+        if !token.isEmpty {
+            rendered += highlightYAMLScalarToken(token)
+        }
+        rendered += escapeHTML(valueTrailing)
+
+        if !commentPart.isEmpty {
+            rendered += "<span class=\"yaml-comment\">\(escapeHTML(commentPart))</span>"
+        }
+
+        return rendered
+    }
+
+    private static func highlightYAMLScalarToken(_ token: String) -> String {
+        let lowered = token.lowercased()
+
+        if token.hasPrefix("[") && token.hasSuffix("]") {
+            return highlightYAMLInlineSequence(token)
+        }
+        if token.hasPrefix("'") && token.hasSuffix("'") {
+            return "<span class=\"yaml-string\">\(escapeHTML(token))</span>"
+        }
+        if token.hasPrefix("\"") && token.hasSuffix("\"") {
+            return "<span class=\"yaml-string\">\(escapeHTML(token))</span>"
+        }
+        if token.range(of: #"^-?\d+(\.\d+)?$"#, options: .regularExpression) != nil {
+            return "<span class=\"yaml-number\">\(escapeHTML(token))</span>"
+        }
+        if ["true", "false", "yes", "no", "on", "off"].contains(lowered) {
+            return "<span class=\"yaml-bool\">\(escapeHTML(token))</span>"
+        }
+        if lowered == "null" || token == "~" {
+            return "<span class=\"yaml-null\">\(escapeHTML(token))</span>"
+        }
+
+        return "<span class=\"yaml-string\">\(escapeHTML(token))</span>"
+    }
+
+    private static func highlightYAMLInlineSequence(_ token: String) -> String {
+        guard token.count >= 2 else { return escapeHTML(token) }
+
+        let inner = String(token.dropFirst().dropLast())
+        if inner.isEmpty {
+            return "<span class=\"yaml-punct\">[</span><span class=\"yaml-punct\">]</span>"
+        }
+
+        let parts = inner.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        var rendered = "<span class=\"yaml-punct\">[</span>"
+
+        for (index, part) in parts.enumerated() {
+            let partLeading = leadingWhitespace(in: part)
+            let partTrailing = trailingWhitespace(in: part)
+            let partToken = part.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            rendered += escapeHTML(partLeading)
+            if !partToken.isEmpty {
+                rendered += highlightYAMLScalarToken(partToken)
+            }
+            rendered += escapeHTML(partTrailing)
+
+            if index < parts.count - 1 {
+                rendered += "<span class=\"yaml-punct\">,</span>"
+            }
+        }
+
+        rendered += "<span class=\"yaml-punct\">]</span>"
+        return rendered
+    }
+
+    private static func splitTrailingComment(from text: String) -> (String, String) {
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        var escapedInDoubleQuote = false
+
+        for index in text.indices {
+            let character = text[index]
+
+            if inDoubleQuote {
+                if escapedInDoubleQuote {
+                    escapedInDoubleQuote = false
+                    continue
+                }
+
+                if character == "\\" {
+                    escapedInDoubleQuote = true
+                    continue
+                }
+            }
+
+            if character == "'" && !inDoubleQuote {
+                inSingleQuote.toggle()
+                continue
+            }
+
+            if character == "\"" && !inSingleQuote {
+                inDoubleQuote.toggle()
+                continue
+            }
+
+            if character == "#" && !inSingleQuote && !inDoubleQuote {
+                if index == text.startIndex {
+                    return ("", String(text[index...]))
+                }
+
+                let previous = text[text.index(before: index)]
+                if previous.isWhitespace {
+                    return (String(text[..<index]), String(text[index...]))
+                }
+            }
+        }
+
+        return (text, "")
+    }
+
+    private static func leadingWhitespace(in text: String) -> String {
+        String(text.prefix { $0 == " " || $0 == "\t" })
+    }
+
+    private static func trailingWhitespace(in text: String) -> String {
+        let reversed = text.reversed().prefix { $0 == " " || $0 == "\t" }
+        return String(reversed.reversed())
     }
 
     private static func normalizeForInk(_ markdown: String) -> String {

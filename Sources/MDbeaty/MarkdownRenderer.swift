@@ -202,8 +202,8 @@ enum MarkdownRenderer {
             }
             .toc-panel {
               position: sticky;
-              top: 14px;
-              max-height: calc(100vh - 28px);
+              top: 28px;
+              max-height: calc(100vh - 56px);
               overflow: auto;
               border: 1px solid var(--border);
               border-radius: 16px;

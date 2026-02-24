@@ -92,13 +92,12 @@ final class ViewerState: ObservableObject {
         let src = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.write, .rename, .delete],
-            queue: DispatchQueue.global(qos: .utility)
+            queue: DispatchQueue.main
         )
 
         src.setEventHandler { [weak self] in
-            Task { @MainActor in
-                self?.handleFileEvent(src.data)
-            }
+            let eventData = src.data
+            self?.handleFileEvent(eventData)
         }
 
         src.resume()

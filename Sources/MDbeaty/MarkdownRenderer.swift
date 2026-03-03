@@ -103,7 +103,8 @@ enum MarkdownRenderer {
     """
 
     static func render(markdown: String, baseFolderURL: URL?, initialFragment: String?) -> String {
-        let extracted = extractYAMLFrontMatterIfPresent(markdown)
+        let normalizedInput = normalizeLineEndings(markdown)
+        let extracted = extractYAMLFrontMatterIfPresent(normalizedInput)
         let contentMarkdown = extracted.bodyMarkdown
         let parser = MarkdownParser()
         let headingCandidates = extractHeadingCandidates(from: contentMarkdown)
@@ -689,22 +690,21 @@ enum MarkdownRenderer {
     }
 
     private static func extractYAMLFrontMatterIfPresent(_ markdown: String) -> FrontMatterExtraction {
-        var input = markdown
-        if input.hasPrefix("\u{FEFF}") {
-            input.removeFirst()
+        var normalized = normalizeLineEndings(markdown)
+        if normalized.hasPrefix("\u{FEFF}") {
+            normalized.removeFirst()
         }
 
-        let normalized = input.replacingOccurrences(of: "\r\n", with: "\n")
         guard normalized.hasPrefix("---\n") else {
-            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: input)
+            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: normalized)
         }
 
         let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         guard lines.count >= 3 else {
-            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: input)
+            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: normalized)
         }
         guard lines.first == "---" else {
-            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: input)
+            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: normalized)
         }
 
         var closingIndex: Int?
@@ -716,7 +716,7 @@ enum MarkdownRenderer {
         }
 
         guard let endIndex = closingIndex, endIndex > 1 else {
-            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: input)
+            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: normalized)
         }
 
         let metadataLines = lines[1..<endIndex]
@@ -724,7 +724,7 @@ enum MarkdownRenderer {
             line.range(of: #"^\s*[\w-]+\s*:"#, options: .regularExpression) != nil
         }
         guard hasYAMLShape else {
-            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: input)
+            return FrontMatterExtraction(frontMatter: nil, bodyMarkdown: normalized)
         }
 
         let frontMatter = Array(lines[0...endIndex]).joined(separator: "\n")
@@ -944,28 +944,167 @@ enum MarkdownRenderer {
     }
 
     private static func normalizeForInk(_ markdown: String) -> String {
-        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
+        let rescuedMarkdown = restoreCollapsedHeadingsAndLists(in: markdown)
+        let lines = rescuedMarkdown.split(separator: "\n", omittingEmptySubsequences: false)
         var normalizedLines: [String] = []
         normalizedLines.reserveCapacity(lines.count + 16)
 
         for rawLine in lines {
             let line = String(rawLine)
+            let sanitizedLine = escapeComparatorAngleBracketsOutsideCode(in: line)
 
-            if let transformedReference = normalizeAngleBracketReference(line) {
+            if let transformedReference = normalizeAngleBracketReference(sanitizedLine) {
                 normalizedLines.append(transformedReference)
                 continue
             }
 
-            if let heading = parseATXHeading(line), heading.explicitID != nil {
+            if let heading = parseATXHeading(sanitizedLine), heading.explicitID != nil {
                 let cleaned = String(repeating: "#", count: heading.level) + " " + heading.text
                 normalizedLines.append(cleaned)
                 continue
             }
 
-            normalizedLines.append(line)
+            normalizedLines.append(sanitizedLine)
         }
 
         return normalizedLines.joined(separator: "\n")
+    }
+
+    private static func normalizeLineEndings(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\u{2028}", with: "\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\n")
+    }
+
+    private static func restoreCollapsedHeadingsAndLists(in markdown: String) -> String {
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
+        var restoredLines: [String] = []
+        restoredLines.reserveCapacity(lines.count + 16)
+
+        var insideFencedCodeBlock = false
+
+        for rawLine in lines {
+            let line = String(rawLine)
+
+            if isFencedCodeDelimiter(line) {
+                restoredLines.append(line)
+                insideFencedCodeBlock.toggle()
+                continue
+            }
+
+            guard !insideFencedCodeBlock else {
+                restoredLines.append(line)
+                continue
+            }
+
+            let splitHeadings = splitInlineATXHeadings(in: line)
+            let splitHeadingsLines = splitHeadings.split(
+                separator: "\n",
+                omittingEmptySubsequences: false
+            )
+
+            for splitLine in splitHeadingsLines {
+                restoredLines.append(
+                    splitCollapsedHeadingFromFollowingListIfNeeded(String(splitLine))
+                )
+            }
+        }
+
+        return restoredLines.joined(separator: "\n")
+    }
+
+    private static func isFencedCodeDelimiter(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~")
+    }
+
+    private static func splitInlineATXHeadings(in line: String) -> String {
+        guard line.contains("##"),
+              let regex = try? NSRegularExpression(pattern: #"(?<=\S)\s+(#{2,6}\s+)"#) else {
+            return line
+        }
+
+        var transformed = line
+
+        while true {
+            let searchRange = NSRange(transformed.startIndex..<transformed.endIndex, in: transformed)
+            guard let match = regex.firstMatch(in: transformed, options: [], range: searchRange),
+                  let fullRange = Range(match.range, in: transformed),
+                  let markerRange = Range(match.range(at: 1), in: transformed) else {
+                break
+            }
+
+            let marker = String(transformed[markerRange])
+            transformed.replaceSubrange(fullRange, with: "\n\n" + marker)
+        }
+
+        return transformed
+    }
+
+    private static func splitCollapsedHeadingFromFollowingListIfNeeded(_ line: String) -> String {
+        guard parseATXHeading(line) != nil else { return line }
+
+        if let split = splitCollapsedHeadingLine(
+            line,
+            pattern: #"^(#{2,6}\s+.+?)\s+(\d+\.\s+.+\s+\d+\.\s+.+)$"#
+        ) {
+            return split
+        }
+
+        if let split = splitCollapsedHeadingLine(
+            line,
+            pattern: #"^(#{2,6}\s+.+?)\s+([-*+]\s+.+\s+[-*+]\s+.+)$"#
+        ) {
+            return split
+        }
+
+        return line
+    }
+
+    private static func splitCollapsedHeadingLine(_ line: String, pattern: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: line,
+                  options: [],
+                  range: NSRange(line.startIndex..<line.endIndex, in: line)
+              ),
+              let headingRange = Range(match.range(at: 1), in: line),
+              let tailRange = Range(match.range(at: 2), in: line) else {
+            return nil
+        }
+
+        let heading = String(line[headingRange]).trimmingCharacters(in: .whitespaces)
+        let tail = String(line[tailRange]).trimmingCharacters(in: .whitespaces)
+        guard !heading.isEmpty, !tail.isEmpty else { return nil }
+
+        return "\(heading)\n\n\(tail)"
+    }
+
+    private static func escapeComparatorAngleBracketsOutsideCode(in line: String) -> String {
+        guard line.contains("<=") || line.contains(">=") else { return line }
+
+        let segments = line.split(separator: "`", omittingEmptySubsequences: false)
+        var result = ""
+        result.reserveCapacity(line.count + 8)
+
+        for (index, segment) in segments.enumerated() {
+            if index > 0 {
+                result.append("`")
+            }
+
+            if index.isMultiple(of: 2) {
+                var transformed = String(segment)
+                transformed = transformed.replacingOccurrences(of: "<=", with: "&lt;=")
+                transformed = transformed.replacingOccurrences(of: ">=", with: "&gt;=")
+                result += transformed
+            } else {
+                result += segment
+            }
+        }
+
+        return result
     }
 
     private static func parseATXHeading(_ line: String) -> ParsedHeadingLine? {

@@ -46,16 +46,18 @@ struct WorkspaceView: View {
 
     @ViewBuilder
     private var selectedTabContent: some View {
-        if let tab = workspace.selectedTab {
-            ContentView(
-                state: tab.state,
-                onOpenMarkdownLink: { url in
-                    workspace.openFromExternal(url: url)
-                }
-            )
-                .id(tab.id)
-        } else {
-            Color.clear
+        ZStack {
+            ForEach(workspace.tabs) { tab in
+                ContentView(
+                    state: tab.state,
+                    onOpenMarkdownLink: { url in
+                        workspace.openFromExternal(url: url)
+                    }
+                )
+                .opacity(tab.id == workspace.selectedTabID ? 1 : 0)
+                .allowsHitTesting(tab.id == workspace.selectedTabID)
+                .accessibilityHidden(tab.id != workspace.selectedTabID)
+            }
         }
     }
 }

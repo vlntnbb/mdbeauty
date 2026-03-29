@@ -18,6 +18,9 @@ let package = Package(
             name: "MDbeaty",
             dependencies: [
                 "Ink"
+            ],
+            resources: [
+                .copy("WebEditor")
             ]
         )
     ]

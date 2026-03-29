@@ -8,11 +8,12 @@ final class WorkspaceState: ObservableObject {
 
     struct Tab: Identifiable {
         let id: UUID
-        let state: ViewerState
+        let state: DocumentState
     }
 
     @Published private(set) var tabs: [Tab] = []
     @Published var selectedTabID: UUID?
+
     private let allowedContentTypes: [UTType] = {
         var types: [UTType] = [.plainText]
         if let md = UTType(filenameExtension: "md") {
@@ -29,7 +30,7 @@ final class WorkspaceState: ObservableObject {
 
     init() {
         UserDefaults.standard.set(Self.maxRecentFiles, forKey: "NSRecentDocumentsLimit")
-        let tab = Tab(id: UUID(), state: ViewerState())
+        let tab = Tab(id: UUID(), state: DocumentState())
         tabs = [tab]
         selectedTabID = tab.id
     }
@@ -40,8 +41,19 @@ final class WorkspaceState: ObservableObject {
     }
 
     var canReloadSelectedTab: Bool {
-        guard let state = selectedTab?.state else { return false }
-        return state.fileURL != nil && !state.isLoading
+        selectedTab?.state.canReload ?? false
+    }
+
+    var canSaveSelectedTab: Bool {
+        selectedTab?.state.canSave ?? false
+    }
+
+    var selectedMode: TabMode {
+        selectedTab?.state.mode ?? .preview
+    }
+
+    var selectedSaveStatusLabel: String {
+        selectedTab?.state.saveStatusLabel ?? ""
     }
 
     var recentMarkdownURLs: [URL] {
@@ -87,14 +99,27 @@ final class WorkspaceState: ObservableObject {
         selectedTab?.state.reload()
     }
 
+    func saveSelectedTab() {
+        selectedTab?.state.saveNow()
+    }
+
+    func toggleSelectedTabMode() {
+        guard let state = selectedTab?.state else { return }
+        state.mode = state.mode == .preview ? .edit : .preview
+    }
+
+    func setSelectedTabMode(_ mode: TabMode) {
+        selectedTab?.state.mode = mode
+    }
+
     func openEmptyTab() {
-        let tab = Tab(id: UUID(), state: ViewerState())
+        let tab = Tab(id: UUID(), state: DocumentState())
         tabs.append(tab)
         selectedTabID = tab.id
     }
 
     func openInNewTab(url: URL) {
-        let tab = Tab(id: UUID(), state: ViewerState())
+        let tab = Tab(id: UUID(), state: DocumentState())
         tabs.append(tab)
         selectedTabID = tab.id
         tab.state.open(url: url)
@@ -108,11 +133,24 @@ final class WorkspaceState: ObservableObject {
     func close(tabID: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
 
+        let state = tabs[index].state
+        if state.hasUnsavedChanges {
+            let action = promptForUnsavedCloseAction()
+            switch action {
+            case .cancel:
+                return
+            case .saveAndClose:
+                state.saveNow()
+            case .discardAndClose:
+                break
+            }
+        }
+
         let removed = tabs.remove(at: index)
         removed.state.prepareForClose()
 
         if tabs.isEmpty {
-            let fallback = Tab(id: UUID(), state: ViewerState())
+            let fallback = Tab(id: UUID(), state: DocumentState())
             tabs = [fallback]
             selectedTabID = fallback.id
             return
@@ -121,6 +159,30 @@ final class WorkspaceState: ObservableObject {
         if selectedTabID == tabID {
             let newIndex = min(index, tabs.count - 1)
             selectedTabID = tabs[newIndex].id
+        }
+    }
+
+    private enum UnsavedCloseAction {
+        case saveAndClose
+        case discardAndClose
+        case cancel
+    }
+
+    private func promptForUnsavedCloseAction() -> UnsavedCloseAction {
+        let alert = NSAlert()
+        alert.messageText = "Unsaved changes"
+        alert.informativeText = "Save changes before closing this tab?"
+        alert.addButton(withTitle: "Save & Close")
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .saveAndClose
+        case .alertSecondButtonReturn:
+            return .discardAndClose
+        default:
+            return .cancel
         }
     }
 

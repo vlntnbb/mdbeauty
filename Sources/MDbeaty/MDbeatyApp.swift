@@ -58,6 +58,21 @@ struct MDbeatyApp: App {
                 .keyboardShortcut("r")
                 .disabled(!workspace.canReloadSelectedTab)
             }
+
+            CommandGroup(replacing: .saveItem) {
+                Button("Save") {
+                    workspace.saveSelectedTab()
+                }
+                .keyboardShortcut("s")
+                .disabled(!workspace.canSaveSelectedTab)
+            }
+
+            CommandMenu("Mode") {
+                Button("Toggle Preview/Edit") {
+                    workspace.toggleSelectedTabMode()
+                }
+                .keyboardShortcut("e")
+            }
         }
     }
 

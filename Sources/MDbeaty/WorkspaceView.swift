@@ -29,19 +29,41 @@ struct WorkspaceView: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            modeAndStatusControls
+
             Button {
                 workspace.openEmptyTab()
             } label: {
                 Image(systemName: "plus")
             }
             .buttonStyle(.plain)
-            .padding(.trailing, 10)
             .keyboardShortcut("t")
             .help("New Tab")
+            .padding(.trailing, 10)
         }
         .clipped()
-        .frame(height: 44)
+        .frame(height: 48)
         .background(.ultraThinMaterial)
+    }
+
+    private var modeAndStatusControls: some View {
+        HStack(spacing: 8) {
+            Picker("", selection: Binding(
+                get: { workspace.selectedMode },
+                set: { workspace.setSelectedTabMode($0) }
+            )) {
+                ForEach(TabMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 170)
+
+            Text(workspace.selectedSaveStatusLabel)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 68, alignment: .leading)
+        }
     }
 
     @ViewBuilder
@@ -68,7 +90,7 @@ private struct TabButton: View {
     let onSelect: () -> Void
     let onClose: () -> Void
 
-    @ObservedObject private var state: ViewerState
+    @ObservedObject private var state: DocumentState
 
     init(
         tab: WorkspaceState.Tab,
@@ -90,6 +112,11 @@ private struct TabButton: View {
                     Text(displayTitle)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    if state.mode == .edit {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

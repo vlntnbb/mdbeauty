@@ -52,6 +52,59 @@ Optional debug bundle:
 ./scripts/build-app.sh debug
 ```
 
+Sign with Developer ID during build:
+
+```bash
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/build-app.sh
+```
+
+## Share App So It Launches on Another Mac
+
+For "double-click and run" on your friend's Mac, you need:
+
+1. Apple Developer membership (Developer ID certificate).
+2. Notarization via Apple.
+
+One-command release pipeline (signed + notarized + stapled + ZIP):
+
+```bash
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE="mdbeauty-notary" \
+./scripts/release-notarized.sh
+```
+
+Output:
+
+- `dist/MDbeaty.app` (stapled)
+- `dist/release/MDbeaty-<version>-macOS.zip` (share this file)
+
+Create the notary profile once:
+
+```bash
+xcrun notarytool store-credentials "mdbeauty-notary" \
+  --apple-id "<apple-id>" \
+  --team-id "<team-id>" \
+  --password "<app-specific-password>"
+```
+
+## Free Share (Unsigned DMG)
+
+If you do not want to pay for Apple Developer membership, create an unsigned DMG:
+
+```bash
+./scripts/make-dmg.sh
+```
+
+Output:
+
+- `dist/release/MDbeaty-<version>-unsigned.dmg`
+
+Friend flow:
+
+1. Open DMG.
+2. Drag `MDbeaty.app` to `Applications`.
+3. First launch: right-click `MDbeaty.app` -> `Open` -> `Open`.
+
 Generate app icon (`Resources/AppIcon.icns`) from script:
 
 ```bash

@@ -6,6 +6,9 @@ APP_NAME="MDbeaty"
 CONFIGURATION="${1:-release}"
 BUNDLE_ID="${BUNDLE_ID:-com.mdbeaty.viewer}"
 VERSION="${VERSION:-1.0.0}"
+SIGN_IDENTITY="${SIGN_IDENTITY:-}"
+SKIP_CODESIGN="${SKIP_CODESIGN:-0}"
+ENTITLEMENTS_FILE="${ENTITLEMENTS_FILE:-}"
 BUILD_DIR="$ROOT_DIR/.build/$CONFIGURATION"
 BIN_PATH="$BUILD_DIR/$APP_NAME"
 APP_DIR="$ROOT_DIR/dist/$APP_NAME.app"
@@ -117,7 +120,22 @@ if command -v plutil >/dev/null 2>&1; then
 fi
 
 if command -v codesign >/dev/null 2>&1; then
-  codesign --force --deep --sign - "$APP_DIR" >/dev/null
+  if [[ "$SKIP_CODESIGN" == "1" ]]; then
+    echo "Skipping codesign (SKIP_CODESIGN=1)"
+  else
+    CODESIGN_ARGS=(--force --deep)
+
+    if [[ -n "$SIGN_IDENTITY" ]]; then
+      CODESIGN_ARGS+=(--options runtime --timestamp --sign "$SIGN_IDENTITY")
+      if [[ -n "$ENTITLEMENTS_FILE" ]]; then
+        CODESIGN_ARGS+=(--entitlements "$ENTITLEMENTS_FILE")
+      fi
+    else
+      CODESIGN_ARGS+=(--sign -)
+    fi
+
+    codesign "${CODESIGN_ARGS[@]}" "$APP_DIR" >/dev/null
+  fi
 fi
 
 echo "App bundle created:"

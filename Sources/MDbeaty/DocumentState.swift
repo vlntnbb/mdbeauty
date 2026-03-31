@@ -77,6 +77,8 @@ struct EditorCommandRequest: Equatable {
 
 @MainActor
 final class DocumentState: ObservableObject {
+    private static let preserveLineBreaksDefaultsKey = "MDbeaty.PreserveParagraphLineBreaks"
+
     @Published var fileURL: URL?
     @Published var renderedHTML = MarkdownRenderer.welcomeHTML
     @Published var baseURL: URL?
@@ -85,6 +87,17 @@ final class DocumentState: ObservableObject {
     @Published private(set) var hasOpenedAnyFile = false
 
     @Published var mode: TabMode = .preview
+    @Published var preserveParagraphLineBreaks: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                preserveParagraphLineBreaks,
+                forKey: Self.preserveLineBreaksDefaultsKey
+            )
+
+            guard hasOpenedAnyFile else { return }
+            renderCurrentMarkdown()
+        }
+    }
     @Published private(set) var markdownSource = ""
     @Published private(set) var editorMarkdown = ""
     @Published private(set) var saveStatus: SaveStatus = .idle
@@ -105,6 +118,13 @@ final class DocumentState: ObservableObject {
     private var incomingConflictMarkdown: String?
     private var protectedBlocksByID: [String: ProtectedBlock] = [:]
     private var protectedIDSeed = 0
+
+    init() {
+        let storedValue = UserDefaults.standard.object(
+            forKey: Self.preserveLineBreaksDefaultsKey
+        ) as? Bool
+        preserveParagraphLineBreaks = storedValue ?? true
+    }
 
     var canReload: Bool {
         fileURL != nil && !isLoading
@@ -181,12 +201,12 @@ final class DocumentState: ObservableObject {
     }
 
     func receiveEditorMarkdown(_ markdown: String) {
-        guard markdown != editorMarkdown else { return }
+        let normalized = normalizeLineEndings(markdown)
+        guard normalized != editorMarkdown else { return }
 
-        editorMarkdown = normalizeLineEndings(markdown)
-        let restored = restoreProtectedBlocks(in: editorMarkdown)
-        if restored != markdownSource {
-            markdownSource = restored
+        editorMarkdown = normalized
+        if normalized != markdownSource {
+            markdownSource = normalized
             renderCurrentMarkdown()
             hasUnsavedChanges = true
             if !hasConflict {
@@ -372,15 +392,13 @@ final class DocumentState: ObservableObject {
         clearConflict: Bool
     ) {
         let normalizedRaw = normalizeLineEndings(rawMarkdown)
-        let extraction = extractProtectedBlocks(from: normalizedRaw)
 
         fileURL = sourceURL
         baseURL = sourceURL?.deletingLastPathComponent()
 
-        protectedBlocks = extraction.blocks
-        protectedBlocksByID = Dictionary(uniqueKeysWithValues: extraction.blocks.map { ($0.id, $0) })
-
-        editorMarkdown = extraction.editorMarkdown
+        protectedBlocks = []
+        protectedBlocksByID = [:]
+        editorMarkdown = normalizedRaw
         markdownSource = normalizedRaw
 
         hasUnsavedChanges = false
@@ -401,7 +419,8 @@ final class DocumentState: ObservableObject {
         renderedHTML = MarkdownRenderer.render(
             markdown: markdownSource,
             baseFolderURL: folderURL,
-            initialFragment: initialFragment
+            initialFragment: initialFragment,
+            preserveParagraphLineBreaks: preserveParagraphLineBreaks
         )
     }
 

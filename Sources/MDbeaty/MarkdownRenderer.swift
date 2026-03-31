@@ -102,13 +102,21 @@ enum MarkdownRenderer {
     </html>
     """
 
-    static func render(markdown: String, baseFolderURL: URL?, initialFragment: String?) -> String {
+    static func render(
+        markdown: String,
+        baseFolderURL: URL?,
+        initialFragment: String?,
+        preserveParagraphLineBreaks: Bool = true
+    ) -> String {
         let normalizedInput = normalizeLineEndings(markdown)
         let extracted = extractYAMLFrontMatterIfPresent(normalizedInput)
         let contentMarkdown = extracted.bodyMarkdown
         let parser = MarkdownParser()
         let headingCandidates = extractHeadingCandidates(from: contentMarkdown)
-        let normalizedMarkdown = normalizeForInk(contentMarkdown)
+        let normalizedMarkdown = normalizeForInk(
+            contentMarkdown,
+            preserveParagraphLineBreaks: preserveParagraphLineBreaks
+        )
         let parsedBodyHTML = parser.html(from: normalizedMarkdown)
         let enhanced = enhanceBodyHTML(parsedBodyHTML, headingCandidates: headingCandidates)
 
@@ -943,7 +951,10 @@ enum MarkdownRenderer {
         return String(reversed.reversed())
     }
 
-    private static func normalizeForInk(_ markdown: String) -> String {
+    private static func normalizeForInk(
+        _ markdown: String,
+        preserveParagraphLineBreaks: Bool
+    ) -> String {
         let rescuedMarkdown = restoreCollapsedHeadingsAndLists(in: markdown)
         let lines = rescuedMarkdown.split(separator: "\n", omittingEmptySubsequences: false)
         var normalizedLines: [String] = []
@@ -967,7 +978,83 @@ enum MarkdownRenderer {
             normalizedLines.append(sanitizedLine)
         }
 
+        if preserveParagraphLineBreaks {
+            normalizedLines = insertingHardBreaksInsideParagraphs(in: normalizedLines)
+        }
+
         return normalizedLines.joined(separator: "\n")
+    }
+
+    private static func insertingHardBreaksInsideParagraphs(in lines: [String]) -> [String] {
+        guard lines.count > 1 else { return lines }
+
+        var output = lines
+        var insideFencedCodeBlock = false
+
+        for index in 0..<(lines.count - 1) {
+            let current = lines[index]
+            let next = lines[index + 1]
+
+            if isFencedCodeDelimiter(current) {
+                insideFencedCodeBlock.toggle()
+                continue
+            }
+
+            guard !insideFencedCodeBlock else { continue }
+            guard shouldInsertHardBreak(after: current, before: next) else { continue }
+            output[index] = current + "  "
+        }
+
+        return output
+    }
+
+    private static func shouldInsertHardBreak(after currentLine: String, before nextLine: String) -> Bool {
+        let currentTrimmed = currentLine.trimmingCharacters(in: .whitespaces)
+        let nextTrimmed = nextLine.trimmingCharacters(in: .whitespaces)
+
+        guard !currentTrimmed.isEmpty, !nextTrimmed.isEmpty else { return false }
+        guard isParagraphLikeLine(currentTrimmed), isParagraphLikeLine(nextTrimmed) else { return false }
+
+        if currentLine.hasSuffix("  ") {
+            return false
+        }
+
+        if currentTrimmed.hasSuffix("\\") {
+            return false
+        }
+
+        return true
+    }
+
+    private static func isParagraphLikeLine(_ trimmedLine: String) -> Bool {
+        guard !trimmedLine.isEmpty else { return false }
+
+        if trimmedLine.hasPrefix("#") ||
+            trimmedLine.hasPrefix(">") ||
+            trimmedLine.hasPrefix("```") ||
+            trimmedLine.hasPrefix("~~~") ||
+            trimmedLine.hasPrefix("|") ||
+            trimmedLine.hasPrefix("<") {
+            return false
+        }
+
+        if trimmedLine == "---" || trimmedLine == "***" || trimmedLine == "___" {
+            return false
+        }
+
+        if trimmedLine.hasPrefix("- ") || trimmedLine.hasPrefix("* ") || trimmedLine.hasPrefix("+ ") {
+            return false
+        }
+
+        if trimmedLine.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil {
+            return false
+        }
+
+        if trimmedLine.range(of: #"^\[[^\]]+\]:"#, options: .regularExpression) != nil {
+            return false
+        }
+
+        return true
     }
 
     private static func normalizeLineEndings(_ text: String) -> String {

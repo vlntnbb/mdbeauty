@@ -56,6 +56,10 @@ final class WorkspaceState: ObservableObject {
         selectedTab?.state.saveStatusLabel ?? ""
     }
 
+    var selectedPreserveParagraphLineBreaks: Bool {
+        selectedTab?.state.preserveParagraphLineBreaks ?? true
+    }
+
     var recentMarkdownURLs: [URL] {
         Array(NSDocumentController.shared.recentDocumentURLs.filter { url in
             isMarkdownLikeFileURL(url) && FileManager.default.fileExists(atPath: url.path)
@@ -110,6 +114,10 @@ final class WorkspaceState: ObservableObject {
 
     func setSelectedTabMode(_ mode: TabMode) {
         selectedTab?.state.mode = mode
+    }
+
+    func setSelectedPreserveParagraphLineBreaks(_ enabled: Bool) {
+        selectedTab?.state.preserveParagraphLineBreaks = enabled
     }
 
     func openEmptyTab() {

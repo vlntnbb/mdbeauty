@@ -73,6 +73,16 @@ struct MDbeatyApp: App {
                 }
                 .keyboardShortcut("e")
             }
+
+            CommandMenu("View") {
+                Toggle(
+                    "Keep Paragraph Line Breaks",
+                    isOn: Binding(
+                        get: { workspace.selectedPreserveParagraphLineBreaks },
+                        set: { workspace.setSelectedPreserveParagraphLineBreaks($0) }
+                    )
+                )
+            }
         }
     }
 

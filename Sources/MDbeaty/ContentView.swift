@@ -6,14 +6,6 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if state.mode == .edit {
-                editorToolbar
-                if !state.protectedBlocks.isEmpty {
-                    protectedBlocksBar
-                }
-                Divider()
-            }
-
             if state.mode == .preview {
                 previewView
             } else {
@@ -50,7 +42,7 @@ struct ContentView: View {
     private var editView: some View {
         if state.fileURL == nil {
             VStack(spacing: 10) {
-                Image(systemName: "pencil.and.scribble")
+                Image(systemName: "doc.text")
                     .font(.system(size: 32, weight: .regular))
                     .foregroundStyle(.secondary)
                 Text("Open a Markdown file to start editing")
@@ -59,70 +51,13 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
         } else {
-            MarkdownEditorWebView(state: state)
+            MarkdownTextEditor(
+                text: Binding(
+                    get: { state.editorMarkdown },
+                    set: { state.receiveEditorMarkdown($0) }
+                )
+            )
         }
-    }
-
-    private var protectedBlocksBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(state.protectedBlocks) { block in
-                    Button {
-                        state.openProtectedBlockEditor(id: block.id)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "lock.shield")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text(block.title)
-                                .lineLimit(1)
-                            Text("Edit as Markdown")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.accentColor.opacity(0.12))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-        }
-        .background(.thinMaterial)
-    }
-
-    private var editorToolbar: some View {
-        HStack(spacing: 6) {
-            EditorToolbarButton(symbol: "textformat.size.larger", action: { state.issueEditorCommand(.h1) })
-            EditorToolbarButton(symbol: "textformat.size", action: { state.issueEditorCommand(.h2) })
-            Divider().frame(height: 18)
-            EditorToolbarButton(symbol: "bold", action: { state.issueEditorCommand(.bold) })
-            EditorToolbarButton(symbol: "italic", action: { state.issueEditorCommand(.italic) })
-            Divider().frame(height: 18)
-            EditorToolbarButton(symbol: "list.bullet", action: { state.issueEditorCommand(.bulletList) })
-            EditorToolbarButton(symbol: "list.number", action: { state.issueEditorCommand(.orderedList) })
-            EditorToolbarButton(symbol: "text.quote", action: { state.issueEditorCommand(.quote) })
-            EditorToolbarButton(symbol: "curlybraces", action: { state.issueEditorCommand(.code) })
-            Divider().frame(height: 18)
-            EditorToolbarButton(symbol: "link", action: { state.beginInsertLinkFlow() })
-            EditorToolbarButton(symbol: "photo", action: { state.beginInsertImageFlow() })
-            Divider().frame(height: 18)
-            EditorToolbarButton(symbol: "arrow.uturn.backward", action: { state.issueEditorCommand(.undo) })
-            EditorToolbarButton(symbol: "arrow.uturn.forward", action: { state.issueEditorCommand(.redo) })
-            Spacer(minLength: 0)
-            if !state.selectionSummary.isEmpty {
-                Text(state.selectionSummary)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(.thinMaterial)
     }
 
     private var conflictBanner: some View {
@@ -148,25 +83,6 @@ struct ContentView: View {
         .overlay(
             Rectangle()
                 .stroke(Color.orange.opacity(0.35), lineWidth: 1)
-        )
-    }
-}
-
-private struct EditorToolbarButton: View {
-    let symbol: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 28, height: 24)
-                .contentShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.secondary.opacity(0.12))
         )
     }
 }

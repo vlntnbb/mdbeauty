@@ -978,11 +978,89 @@ enum MarkdownRenderer {
             normalizedLines.append(sanitizedLine)
         }
 
+        normalizedLines = insertingBlankLinesBeforeRootListItemsAfterNestedListsForInk(in: normalizedLines)
+
         if preserveParagraphLineBreaks {
             normalizedLines = insertingHardBreaksInsideParagraphs(in: normalizedLines)
         }
 
         return normalizedLines.joined(separator: "\n")
+    }
+
+    private static func insertingBlankLinesBeforeRootListItemsAfterNestedListsForInk(
+        in lines: [String]
+    ) -> [String] {
+        guard lines.count > 1 else { return lines }
+
+        var output: [String] = []
+        output.reserveCapacity(lines.count + 8)
+
+        var insideFencedCodeBlock = false
+        var previousListItemIndent: Int?
+
+        for line in lines {
+            if isFencedCodeDelimiter(line) {
+                output.append(line)
+                insideFencedCodeBlock.toggle()
+                continue
+            }
+
+            guard !insideFencedCodeBlock else {
+                output.append(line)
+                continue
+            }
+
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                output.append(line)
+                previousListItemIndent = nil
+                continue
+            }
+
+            if let currentIndent = listItemIndent(in: line) {
+                let previousLineIsBlank = output.last?.trimmingCharacters(in: .whitespaces).isEmpty ?? true
+                if currentIndent == 0,
+                   let previousListItemIndent,
+                   previousListItemIndent > 0,
+                   !previousLineIsBlank {
+                    output.append("")
+                }
+
+                output.append(line)
+                previousListItemIndent = currentIndent
+                continue
+            }
+
+            output.append(line)
+        }
+
+        return output
+    }
+
+    private static func listItemIndent(in line: String) -> Int? {
+        var indent = 0
+        var contentStart = line.startIndex
+
+        while contentStart < line.endIndex {
+            let character = line[contentStart]
+            if character == " " {
+                indent += 1
+                contentStart = line.index(after: contentStart)
+                continue
+            }
+            if character == "\t" {
+                indent += 4
+                contentStart = line.index(after: contentStart)
+                continue
+            }
+            break
+        }
+
+        let content = String(line[contentStart...])
+        guard content.range(of: #"^([-*+]|\d+\.)\s"#, options: .regularExpression) != nil else {
+            return nil
+        }
+
+        return indent
     }
 
     private static func insertingHardBreaksInsideParagraphs(in lines: [String]) -> [String] {

@@ -14,6 +14,7 @@ Lightweight, fast and clean macOS Markdown viewer.
 - opening a new `.md` from Finder while app is running opens a new tab
 - drag-and-drop `.md` files
 - `File -> Open` and `File -> Recent` menu items (`Cmd+O`, `Cmd+R` for reload)
+- `File -> Print` and `File -> Export PDF` for printable Markdown output
 - auto-reload when the file changes on disk
 
 ## Run

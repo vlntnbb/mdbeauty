@@ -3,9 +3,20 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var state: DocumentState
     let onOpenMarkdownLink: ((URL) -> Void)?
+    @State private var isSearchPresented = false
+    @State private var searchQuery = ""
+    @State private var searchMatchCount = 0
+    @State private var searchToken = 0
+    @State private var searchBackwards = false
+    @State private var searchReset = false
+    @FocusState private var isSearchFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
+            if isSearchPresented {
+                searchBar
+            }
+
             if state.mode == .preview {
                 previewView
             } else {
@@ -27,6 +38,12 @@ struct ContentView: View {
                 incomingMarkdown: state.compareIncomingMarkdown
             )
         }
+        .onChange(of: state.findRequestToken) { _ in
+            presentSearchBar()
+        }
+        .onChange(of: state.mode) { _ in
+            triggerSearch(reset: true, backwards: false)
+        }
         .frame(minWidth: 880, minHeight: 600)
     }
 
@@ -34,7 +51,16 @@ struct ContentView: View {
         MarkdownWebView(
             html: state.renderedHTML,
             baseURL: state.baseURL,
-            onOpenMarkdownLink: onOpenMarkdownLink
+            onOpenMarkdownLink: onOpenMarkdownLink,
+            printRequest: state.printRequest,
+            suggestedPDFFileName: state.suggestedPDFFileName,
+            searchQuery: searchQuery,
+            searchToken: searchToken,
+            searchBackwards: searchBackwards,
+            searchReset: searchReset,
+            onSearchResult: { matchCount in
+                searchMatchCount = matchCount
+            }
         )
     }
 
@@ -55,9 +81,100 @@ struct ContentView: View {
                 text: Binding(
                     get: { state.editorMarkdown },
                     set: { state.receiveEditorMarkdown($0) }
-                )
+                ),
+                searchQuery: searchQuery,
+                searchToken: searchToken,
+                searchBackwards: searchBackwards,
+                searchReset: searchReset,
+                onSearchResult: { matchCount in
+                    searchMatchCount = matchCount
+                }
             )
         }
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Find in document", text: $searchQuery)
+                .textFieldStyle(.roundedBorder)
+                .focused($isSearchFieldFocused)
+                .onSubmit {
+                    triggerSearch(reset: false, backwards: false)
+                }
+                .onChange(of: searchQuery) { newValue in
+                    if newValue.isEmpty {
+                        hideSearchBar(clearQuery: false)
+                        return
+                    }
+                    triggerSearch(reset: true, backwards: false)
+                }
+
+            Text(searchMatchCount > 0 ? "\(searchMatchCount) matches" : "No matches")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 72, alignment: .leading)
+
+            Button {
+                triggerSearch(reset: false, backwards: true)
+            } label: {
+                Image(systemName: "chevron.up")
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .disabled(searchQuery.isEmpty)
+            .help("Find Previous")
+
+            Button {
+                triggerSearch(reset: false, backwards: false)
+            } label: {
+                Image(systemName: "chevron.down")
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .disabled(searchQuery.isEmpty)
+            .help("Find Next")
+
+            Button {
+                hideSearchBar()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Close Search")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.thinMaterial)
+    }
+
+    private func triggerSearch(reset: Bool, backwards: Bool) {
+        searchBackwards = backwards
+        searchReset = reset
+        searchToken &+= 1
+    }
+
+    private func presentSearchBar() {
+        if !isSearchPresented {
+            isSearchPresented = true
+        }
+        DispatchQueue.main.async {
+            isSearchFieldFocused = true
+        }
+    }
+
+    private func hideSearchBar(clearQuery: Bool = true) {
+        if clearQuery {
+            searchQuery = ""
+        }
+        searchMatchCount = 0
+        isSearchPresented = false
+        isSearchFieldFocused = false
+        triggerSearch(reset: true, backwards: false)
     }
 
     private var conflictBanner: some View {

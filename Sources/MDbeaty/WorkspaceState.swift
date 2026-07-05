@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 @MainActor
 final class WorkspaceState: ObservableObject {
     private static let maxRecentFiles = 10
+    private static let applicationSupportFolderName = "MDbeaty"
+    private static let recentFilesName = "recent-files.json"
 
     struct Tab: Identifiable {
         let id: UUID
@@ -12,6 +14,7 @@ final class WorkspaceState: ObservableObject {
     }
 
     @Published private(set) var tabs: [Tab] = []
+    @Published private(set) var recentMarkdownURLs: [URL] = []
     @Published var selectedTabID: UUID?
 
     private let allowedContentTypes: [UTType] = {
@@ -30,9 +33,15 @@ final class WorkspaceState: ObservableObject {
 
     init() {
         UserDefaults.standard.set(Self.maxRecentFiles, forKey: "NSRecentDocumentsLimit")
+        let hasStoredRecentFiles = Self.recentFilesStoreExists
+        recentMarkdownURLs = Self.loadRecentMarkdownURLs()
         let tab = Tab(id: UUID(), state: DocumentState())
         tabs = [tab]
         selectedTabID = tab.id
+
+        if !hasStoredRecentFiles {
+            mergeSystemRecentDocumentsIfNeeded()
+        }
     }
 
     var selectedTab: Tab? {
@@ -48,6 +57,10 @@ final class WorkspaceState: ObservableObject {
         selectedTab?.state.canSave ?? false
     }
 
+    var canPrintSelectedTab: Bool {
+        selectedTab?.state.canPrint ?? false
+    }
+
     var selectedMode: TabMode {
         selectedTab?.state.mode ?? .preview
     }
@@ -58,12 +71,6 @@ final class WorkspaceState: ObservableObject {
 
     var selectedPreserveParagraphLineBreaks: Bool {
         selectedTab?.state.preserveParagraphLineBreaks ?? true
-    }
-
-    var recentMarkdownURLs: [URL] {
-        Array(NSDocumentController.shared.recentDocumentURLs.filter { url in
-            isMarkdownLikeFileURL(url) && FileManager.default.fileExists(atPath: url.path)
-        }.prefix(Self.maxRecentFiles))
     }
 
     func openAtLaunch(url: URL) {
@@ -90,12 +97,17 @@ final class WorkspaceState: ObservableObject {
     }
 
     func openRecent(url: URL) {
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            removeRecent(url: url)
+            return
+        }
         openInTabOrFocusExisting(url: url)
     }
 
     func clearRecentFiles() {
         NSDocumentController.shared.clearRecentDocuments(nil)
+        recentMarkdownURLs = []
+        saveRecentMarkdownURLs()
         objectWillChange.send()
     }
 
@@ -105,6 +117,18 @@ final class WorkspaceState: ObservableObject {
 
     func saveSelectedTab() {
         selectedTab?.state.saveNow()
+    }
+
+    func printSelectedTab() {
+        selectedTab?.state.requestPrint()
+    }
+
+    func exportSelectedTabToPDF() {
+        selectedTab?.state.requestPDFExport()
+    }
+
+    func findInSelectedTab() {
+        selectedTab?.state.requestFindInDocument()
     }
 
     func toggleSelectedTabMode() {
@@ -131,6 +155,7 @@ final class WorkspaceState: ObservableObject {
         tabs.append(tab)
         selectedTabID = tab.id
         tab.state.open(url: url)
+        recordRecentIfNeeded(url: url)
     }
 
     func select(tabID: UUID) {
@@ -206,21 +231,18 @@ final class WorkspaceState: ObservableObject {
         return only
     }
 
-    private func isMarkdownLikeFileURL(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
-        return ext == "md" || ext == "markdown" || ext == "mdown"
-    }
-
     private func openInTabOrFocusExisting(url: URL) {
         if let existing = tab(containing: url) {
             selectedTabID = existing.id
             existing.state.open(url: url)
+            recordRecentIfNeeded(url: url)
             return
         }
 
         if let empty = singleEmptyTab() {
             selectedTabID = empty.id
             empty.state.open(url: url)
+            recordRecentIfNeeded(url: url)
             return
         }
 
@@ -236,10 +258,121 @@ final class WorkspaceState: ObservableObject {
     }
 
     private func normalizedPath(for url: URL) -> String {
-        removingFragment(from: url).standardizedFileURL.path
+        Self.normalizedPath(for: url)
     }
 
-    private func removingFragment(from url: URL) -> URL {
+    private func recordRecentIfNeeded(url: URL) {
+        let normalizedURL = Self.normalizedFileURL(for: url)
+        guard Self.isMarkdownLikeFileURL(normalizedURL) else { return }
+        guard FileManager.default.fileExists(atPath: normalizedURL.path) else { return }
+
+        recentMarkdownURLs.removeAll { Self.normalizedPath(for: $0) == normalizedURL.path }
+        recentMarkdownURLs.insert(normalizedURL, at: 0)
+        recentMarkdownURLs = Array(recentMarkdownURLs.prefix(Self.maxRecentFiles))
+        saveRecentMarkdownURLs()
+    }
+
+    private func removeRecent(url: URL) {
+        let normalizedPath = Self.normalizedPath(for: url)
+        recentMarkdownURLs = recentMarkdownURLs.filter {
+            Self.normalizedPath(for: $0) != normalizedPath
+        }
+        saveRecentMarkdownURLs()
+    }
+
+    private func mergeSystemRecentDocumentsIfNeeded() {
+        let systemURLs = Self.normalizedRecentMarkdownURLs(
+            from: NSDocumentController.shared.recentDocumentURLs
+        )
+        guard !systemURLs.isEmpty else { return }
+
+        recentMarkdownURLs = Self.deduplicatedRecentMarkdownURLs(
+            recentMarkdownURLs + systemURLs
+        )
+        saveRecentMarkdownURLs()
+    }
+
+    private func saveRecentMarkdownURLs() {
+        guard let fileURL = Self.recentFilesURL else { return }
+
+        do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let paths = recentMarkdownURLs.map(\.path)
+            let data = try JSONEncoder().encode(paths)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            NSLog("MDbeaty failed to save recent files: \(error.localizedDescription)")
+        }
+    }
+
+    private static func loadRecentMarkdownURLs() -> [URL] {
+        guard
+            let fileURL = recentFilesURL,
+            let data = try? Data(contentsOf: fileURL),
+            let paths = try? JSONDecoder().decode([String].self, from: data)
+        else {
+            return []
+        }
+
+        let urls = paths.map { URL(fileURLWithPath: $0) }
+        return deduplicatedRecentMarkdownURLs(urls)
+    }
+
+    private static func normalizedRecentMarkdownURLs(from urls: [URL]) -> [URL] {
+        deduplicatedRecentMarkdownURLs(urls)
+    }
+
+    private static func deduplicatedRecentMarkdownURLs(_ urls: [URL]) -> [URL] {
+        var seenPaths = Set<String>()
+        var normalizedURLs: [URL] = []
+
+        for url in urls {
+            let normalizedURL = normalizedFileURL(for: url)
+            let path = normalizedURL.path
+            guard isMarkdownLikeFileURL(normalizedURL) else { continue }
+            guard FileManager.default.fileExists(atPath: path) else { continue }
+            guard seenPaths.insert(path).inserted else { continue }
+            normalizedURLs.append(normalizedURL)
+
+            if normalizedURLs.count >= maxRecentFiles {
+                break
+            }
+        }
+
+        return normalizedURLs
+    }
+
+    private static var recentFilesURL: URL? {
+        FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first?
+            .appendingPathComponent(applicationSupportFolderName, isDirectory: true)
+            .appendingPathComponent(recentFilesName, isDirectory: false)
+    }
+
+    private static var recentFilesStoreExists: Bool {
+        guard let recentFilesURL else { return false }
+        return FileManager.default.fileExists(atPath: recentFilesURL.path)
+    }
+
+    private static func isMarkdownLikeFileURL(_ url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        return ext == "md" || ext == "markdown" || ext == "mdown"
+    }
+
+    private static func normalizedPath(for url: URL) -> String {
+        normalizedFileURL(for: url).path
+    }
+
+    private static func normalizedFileURL(for url: URL) -> URL {
+        removingFragment(from: url).standardizedFileURL
+    }
+
+    private static func removingFragment(from url: URL) -> URL {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return url
         }

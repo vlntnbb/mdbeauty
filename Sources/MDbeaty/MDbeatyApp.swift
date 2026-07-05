@@ -67,11 +67,32 @@ struct MDbeatyApp: App {
                 .disabled(!workspace.canSaveSelectedTab)
             }
 
+            CommandGroup(replacing: .printItem) {
+                Button("Print…") {
+                    workspace.printSelectedTab()
+                }
+                .keyboardShortcut("p")
+                .disabled(!workspace.canPrintSelectedTab)
+
+                Button("Export PDF…") {
+                    workspace.exportSelectedTabToPDF()
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .disabled(!workspace.canPrintSelectedTab)
+            }
+
             CommandMenu("Mode") {
                 Button("Toggle Preview/Edit") {
                     workspace.toggleSelectedTabMode()
                 }
                 .keyboardShortcut("e")
+            }
+
+            CommandGroup(after: .pasteboard) {
+                Button("Find…") {
+                    workspace.findInSelectedTab()
+                }
+                .keyboardShortcut("f")
             }
 
             CommandMenu("View") {

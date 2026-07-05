@@ -75,6 +75,16 @@ struct EditorCommandRequest: Equatable {
     let payload: String?
 }
 
+enum DocumentPrintAction: Equatable {
+    case print
+    case exportPDF
+}
+
+struct DocumentPrintRequest: Equatable {
+    let id: UUID
+    let action: DocumentPrintAction
+}
+
 @MainActor
 final class DocumentState: ObservableObject {
     private static let preserveLineBreaksDefaultsKey = "MDbeaty.PreserveParagraphLineBreaks"
@@ -107,6 +117,8 @@ final class DocumentState: ObservableObject {
     @Published private(set) var documentRevision = 0
     @Published private(set) var pendingEditorCommand: EditorCommandRequest?
     @Published private(set) var selectionSummary = ""
+    @Published private(set) var findRequestToken = 0
+    @Published private(set) var printRequest: DocumentPrintRequest?
     @Published var isCompareSheetPresented = false
 
     private var source: DispatchSourceFileSystemObject?
@@ -132,6 +144,10 @@ final class DocumentState: ObservableObject {
 
     var canSave: Bool {
         fileURL != nil && !isLoading
+    }
+
+    var canPrint: Bool {
+        hasOpenedAnyFile && !isLoading
     }
 
     var hasConflict: Bool {
@@ -163,6 +179,14 @@ final class DocumentState: ObservableObject {
         }
     }
 
+    var suggestedPDFFileName: String {
+        guard let fileURL else { return "MDbeaty.pdf" }
+
+        let baseName = fileURL.deletingPathExtension().lastPathComponent
+        guard !baseName.isEmpty else { return "Document.pdf" }
+        return "\(baseName).pdf"
+    }
+
     func open(url: URL) {
         let normalizedURL = url.removingURLFragment()
         let requestedFragment = url.fragment?.removingPercentEncoding
@@ -192,6 +216,18 @@ final class DocumentState: ObservableObject {
         Task {
             await flushAutosaveNow()
         }
+    }
+
+    func requestPrint() {
+        requestPrintAction(.print)
+    }
+
+    func requestPDFExport() {
+        requestPrintAction(.exportPDF)
+    }
+
+    func requestFindInDocument() {
+        findRequestToken &+= 1
     }
 
     func prepareForClose() {
@@ -320,6 +356,12 @@ final class DocumentState: ObservableObject {
     func openConflictComparison() {
         guard hasConflict else { return }
         isCompareSheetPresented = true
+    }
+
+    private func requestPrintAction(_ action: DocumentPrintAction) {
+        guard canPrint else { return }
+        mode = .preview
+        printRequest = DocumentPrintRequest(id: UUID(), action: action)
     }
 
     private func promptReloadWithUnsavedChanges(url: URL) {

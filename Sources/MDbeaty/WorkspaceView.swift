@@ -63,6 +63,16 @@ struct WorkspaceView: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 68, alignment: .leading)
+
+            Button {
+                workspace.exportSelectedTabToPDF()
+            } label: {
+                Image(systemName: "doc.richtext")
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .disabled(!workspace.canPrintSelectedTab)
+            .help("Export PDF")
         }
     }
 

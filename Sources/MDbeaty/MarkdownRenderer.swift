@@ -383,6 +383,14 @@ enum MarkdownRenderer {
               overflow-wrap: normal;
               word-break: normal;
             }
+            pre code.language-text,
+            pre code.language-plaintext,
+            pre code.language-txt {
+              display: block;
+              white-space: pre-wrap;
+              overflow-wrap: break-word;
+              word-break: normal;
+            }
             blockquote {
               margin: 1rem 0;
               padding: 0.15rem 0 0.15rem 1rem;
@@ -411,6 +419,66 @@ enum MarkdownRenderer {
               border: none;
               border-top: 1px solid var(--border);
               margin: 1.5rem 0;
+            }
+            @media print {
+              :root {
+                color-scheme: light;
+                --bg: #ffffff;
+                --card: #ffffff;
+                --fg: #111827;
+                --muted: #263241;
+                --accent: #0645ad;
+                --border: rgba(17, 24, 39, 0.22);
+                --quote: #3f6f9f;
+                --code-bg: #f4f6f8;
+                --code-fg: #111827;
+                --fm-bg: #f7fbff;
+                --fm-border: rgba(15, 82, 160, 0.32);
+                --fm-summary-bg: #eef6ff;
+              }
+              html, body {
+                background: #ffffff !important;
+                color: var(--fg);
+              }
+              body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .layout,
+              .layout.has-toc,
+              .layout.no-toc {
+                display: block;
+                width: auto;
+                margin: 0;
+              }
+              .toc-panel {
+                display: none;
+              }
+              .wrap {
+                border: 0;
+                border-radius: 0;
+                box-shadow: none;
+                min-height: auto;
+                padding: 0;
+                background: transparent;
+              }
+              h1, h2, h3, h4, h5, h6 {
+                break-after: avoid;
+                page-break-after: avoid;
+              }
+              p, li, td, th {
+                color: var(--muted);
+              }
+              img, pre, blockquote, table, .frontmatter-details {
+                break-inside: avoid;
+                page-break-inside: avoid;
+              }
+              img {
+                box-shadow: none;
+              }
+              a {
+                color: var(--accent);
+              }
             }
             @media (max-width: 980px) {
               .layout {
@@ -962,7 +1030,8 @@ enum MarkdownRenderer {
 
         for rawLine in lines {
             let line = String(rawLine)
-            let sanitizedLine = escapeComparatorAngleBracketsOutsideCode(in: line)
+            let normalizedListIndent = normalizeNestedListIndentationForInk(in: line)
+            let sanitizedLine = escapeComparatorAngleBracketsOutsideCode(in: normalizedListIndent)
 
             if let transformedReference = normalizeAngleBracketReference(sanitizedLine) {
                 normalizedLines.append(transformedReference)
@@ -985,6 +1054,37 @@ enum MarkdownRenderer {
         }
 
         return normalizedLines.joined(separator: "\n")
+    }
+
+    private static func normalizeNestedListIndentationForInk(in line: String) -> String {
+        guard !line.isEmpty else { return line }
+
+        var leadingSpaces = 0
+        for scalar in line.unicodeScalars {
+            if scalar == " " {
+                leadingSpaces += 1
+                continue
+            }
+            break
+        }
+
+        guard leadingSpaces >= 2 else { return line }
+
+        let contentStart = line.index(line.startIndex, offsetBy: leadingSpaces)
+        let content = String(line[contentStart...])
+
+        let isListItem = content.range(
+            of: #"^([-*+]|\d+\.)\s"#,
+            options: .regularExpression
+        ) != nil
+
+        guard isListItem else { return line }
+
+        let remainder = leadingSpaces % 4
+        guard remainder == 2 else { return line }
+
+        let normalizedIndent = String(repeating: " ", count: leadingSpaces + 2)
+        return normalizedIndent + content
     }
 
     private static func insertingBlankLinesBeforeRootListItemsAfterNestedListsForInk(

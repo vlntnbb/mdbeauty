@@ -1348,7 +1348,7 @@ enum MarkdownRenderer {
     }
 
     private static func escapeComparatorAngleBracketsOutsideCode(in line: String) -> String {
-        guard line.contains("<=") || line.contains(">=") else { return line }
+        guard line.contains("<") || line.contains(">=") else { return line }
 
         let segments = line.split(separator: "`", omittingEmptySubsequences: false)
         var result = ""
@@ -1361,7 +1361,11 @@ enum MarkdownRenderer {
 
             if index.isMultiple(of: 2) {
                 var transformed = String(segment)
-                transformed = transformed.replacingOccurrences(of: "<=", with: "&lt;=")
+                transformed = transformed.replacingOccurrences(
+                    of: #"<(?=\s*(?:=|[+\-]?(?:\d|[.,]\d)|[$€£¥₽]))"#,
+                    with: "&lt;",
+                    options: .regularExpression
+                )
                 transformed = transformed.replacingOccurrences(of: ">=", with: "&gt;=")
                 result += transformed
             } else {

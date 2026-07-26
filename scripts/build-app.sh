@@ -68,34 +68,6 @@ cat > "$PLIST_PATH" <<EOF
   <key>NSHighResolutionCapable</key>
   <true/>
   $ICON_KEY
-  <key>UTImportedTypeDeclarations</key>
-  <array>
-    <dict>
-      <key>UTTypeIdentifier</key>
-      <string>com.mdbeaty.markdown</string>
-      <key>UTTypeDescription</key>
-      <string>Markdown Document</string>
-      <key>UTTypeConformsTo</key>
-      <array>
-        <string>public.text</string>
-        <string>public.plain-text</string>
-      </array>
-      <key>UTTypeTagSpecification</key>
-      <dict>
-        <key>public.filename-extension</key>
-        <array>
-          <string>md</string>
-          <string>markdown</string>
-          <string>mdown</string>
-        </array>
-        <key>public.mime-type</key>
-        <array>
-          <string>text/markdown</string>
-          <string>text/x-markdown</string>
-        </array>
-      </dict>
-    </dict>
-  </array>
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
@@ -104,10 +76,10 @@ cat > "$PLIST_PATH" <<EOF
       <key>CFBundleTypeRole</key>
       <string>Viewer</string>
       <key>LSHandlerRank</key>
-      <string>Owner</string>
+      <string>Alternate</string>
       <key>LSItemContentTypes</key>
       <array>
-        <string>com.mdbeaty.markdown</string>
+        <string>net.daringfireball.markdown</string>
       </array>
     </dict>
   </array>
